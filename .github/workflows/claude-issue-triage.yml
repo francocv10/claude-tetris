@@ -56,5 +56,9 @@ jobs:
                - Posibles causas o hipótesis iniciales.
                - Sugerencias de próximos pasos para abordar la solución.
 
+            El comentario debe estar escrito en formato Markdown válido y bien estructurado
+            (encabezados, listas, bloques de código con \`\`\` cuando corresponda, etc.) para
+            que GitHub lo renderice correctamente.
+
             No modifiques el cuerpo original del issue, no cierres el issue y no escribas
             código de solución todavía: solo diagnostica y clasifica.
