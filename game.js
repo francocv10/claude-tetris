@@ -14,6 +14,7 @@ const COLORS = [
   '#64b5f6', // J - blue
   '#ffb74d', // L - orange
   '#b0bec5', // 8 - tuerca (gris acero)
+  '#fff176', // 9 - rayo (amarillo eléctrico)
 ];
 
 const PIECES = [
@@ -32,6 +33,7 @@ const LINE_SCORES = [0, 100, 300, 500, 800];
 
 const LOCK_DELAY = 500;      // ms que la pieza espera apoyada antes de fijarse
 const MAX_LOCK_RESETS = 15;  // reinicios máximos por mover/rotar (evita stalling infinito)
+const POWER_UP_LINES = 10;   // líneas eliminadas necesarias para que aparezca el rayo
 
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
@@ -51,7 +53,7 @@ const themeToggle = document.getElementById('theme-toggle');
 const THEME_KEY = 'tetris-theme';
 let gridLineColor = '#22222e';
 
-let board, current, next, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId, lockTimer, lockResets;
+let board, current, next, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId, lockTimer, lockResets, pendingPower, linesUntilPower;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -61,6 +63,12 @@ function randomPiece() {
   const type = Math.floor(Math.random() * (PIECES.length - 1)) + 1;
   const shape = PIECES[type].map(row => [...row]);
   return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
+}
+
+// Pieza especial de rayo: no forma parte de PIECES, así que randomPiece() nunca
+// la genera por azar. Se entrega manualmente cada POWER_UP_LINES líneas.
+function lightningPiece() {
+  return { type: 9, shape: [[9]], x: Math.floor(COLS / 2), y: 0, special: true };
 }
 
 function collide(shape, ox, oy) {
@@ -130,7 +138,12 @@ function clearLines() {
     score += (LINE_SCORES[cleared] || 0) * level * combo;
     level = Math.floor(lines / 10) + 1;
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
-    if (combo > 1) showComboPopup(combo);
+    if (combo > 1) showComboPopup(`COMBO x${combo}`);
+    linesUntilPower -= cleared;
+    if (linesUntilPower <= 0) {
+      pendingPower = true;
+      linesUntilPower += POWER_UP_LINES;
+    }
   } else {
     combo = 0;
   }
@@ -162,14 +175,36 @@ function softDrop() {
 }
 
 function lockPiece() {
-  merge();
-  clearLines();
+  if (current.special) {
+    zap();
+  } else {
+    merge();
+    clearLines();
+  }
   spawn();
+}
+
+// Efecto del rayo: limpia por completo la fila y la columna donde cae (cruz),
+// dejando hueco (no colapsa el resto del tablero).
+function zap() {
+  const col = current.x, row = current.y;
+  let removed = 0;
+  for (let r = 0; r < ROWS; r++) {
+    if (board[r][col]) { board[r][col] = 0; removed++; }
+  }
+  for (let c = 0; c < COLS; c++) {
+    if (board[row][c]) { board[row][c] = 0; removed++; }
+  }
+  score += removed * 50 * level;
+  combo = 0;
+  updateHUD();
+  showComboPopup('⚡ RAYO');
 }
 
 function spawn() {
   current = next;
-  next = randomPiece();
+  next = pendingPower ? lightningPiece() : randomPiece();
+  pendingPower = false;
   dropAccum = 0;
   lockTimer = 0;
   lockResets = 0;
@@ -188,8 +223,8 @@ function updateHUD() {
 
 let comboPopupTimer = null;
 
-function showComboPopup(multiplier) {
-  comboPopup.textContent = `COMBO x${multiplier}`;
+function showComboPopup(text) {
+  comboPopup.textContent = text;
   comboPopup.classList.remove('hidden', 'show');
   // Restart the animation even if a previous combo popup is still fading.
   void comboPopup.offsetWidth;
@@ -339,6 +374,8 @@ function init() {
   dropAccum = 0;
   lockTimer = 0;
   lockResets = 0;
+  pendingPower = false;
+  linesUntilPower = POWER_UP_LINES;
   lastTime = performance.now();
   next = randomPiece();
   spawn();
