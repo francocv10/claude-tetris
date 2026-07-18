@@ -1,0 +1,64 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  triage:
+    # Evita doble ejecución cuando el issue menciona a @claude (lo maneja claude.yml)
+    # y evita reaccionar a ediciones hechas por bots (p. ej. este mismo workflow).
+    if: |
+      !contains(github.event.issue.body, '@claude') &&
+      !contains(github.event.issue.title, '@claude') &&
+      github.event.sender.type != 'Bot'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Issue Triage
+        id: claude-triage
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          claude_args: |
+            --allowed-tools "Bash(gh issue view:*),Bash(gh label list:*),Bash(gh label create:*),Bash(gh issue edit:*),Bash(gh issue comment:*)"
+
+          prompt: |
+            Analiza el issue #${{ github.event.issue.number }} del repositorio ${{ github.repository }}.
+
+            Pasos a seguir:
+            1. Lee el issue completo con `gh issue view ${{ github.event.issue.number }}`.
+            2. Consulta los labels existentes con `gh label list`. Si falta alguno de los
+               labels estándar apropiados para este issue (por ejemplo: bug, enhancement,
+               question, documentation, duplicate, wontfix, help wanted, good first issue),
+               créalo con `gh label create` (elige color y descripción razonables) antes de
+               asignarlo. No crees labels innecesarios ni duplicados.
+            3. Asigna al issue los labels que correspondan usando
+               `gh issue edit ${{ github.event.issue.number }} --add-label "..."`.
+            4. Publica un comentario en español con
+               `gh issue comment ${{ github.event.issue.number }} --body "..."` que contenga
+               un diagnóstico general y estructurado del problema, pensado como punto de
+               partida para implementar la solución más adelante. Incluye:
+               - Resumen breve del problema reportado.
+               - Tipo de issue y severidad estimada.
+               - Área(s) del código probablemente involucradas (este proyecto es un Tetris
+                 en JS vanilla con `game.js`, `index.html` y `style.css`; identifica cuál
+                 aplica según la descripción).
+               - Posibles causas o hipótesis iniciales.
+               - Sugerencias de próximos pasos para abordar la solución.
+
+            El comentario debe estar escrito en formato Markdown válido y bien estructurado
+            (encabezados, listas, bloques de código con \`\`\` cuando corresponda, etc.) para
+            que GitHub lo renderice correctamente.
+
+            No modifiques el cuerpo original del issue, no cierres el issue y no escribas
+            código de solución todavía: solo diagnostica y clasifica.
