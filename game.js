@@ -30,6 +30,9 @@ const PIECES = [
 
 const LINE_SCORES = [0, 100, 300, 500, 800];
 
+const LOCK_DELAY = 500;      // ms que la pieza espera apoyada antes de fijarse
+const MAX_LOCK_RESETS = 15;  // reinicios máximos por mover/rotar (evita stalling infinito)
+
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const nextCanvas = document.getElementById('next-canvas');
@@ -48,7 +51,7 @@ const themeToggle = document.getElementById('theme-toggle');
 const THEME_KEY = 'tetris-theme';
 let gridLineColor = '#22222e';
 
-let board, current, next, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let board, current, next, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId, lockTimer, lockResets;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -89,8 +92,18 @@ function tryRotate() {
     if (!collide(rotated, current.x + kick, current.y)) {
       current.shape = rotated;
       current.x += kick;
+      onPieceMoved();
       return;
     }
+  }
+}
+
+// Reinicia el temporizador de bloqueo cuando la pieza se mueve/rota estando
+// apoyada, dando margen para deslizarla bajo un saliente antes de fijarse.
+function onPieceMoved() {
+  if (collide(current.shape, current.x, current.y + 1) && lockResets < MAX_LOCK_RESETS) {
+    lockTimer = 0;
+    lockResets++;
   }
 }
 
@@ -141,10 +154,11 @@ function softDrop() {
   if (!collide(current.shape, current.x, current.y + 1)) {
     current.y++;
     score += 1;
+    lockResets = 0;
     updateHUD();
-  } else {
-    lockPiece();
   }
+  // Si está apoyada, no se bloquea al instante: el lock delay de loop() se
+  // encarga, dejando margen para deslizarla de lado bajo un saliente.
 }
 
 function lockPiece() {
@@ -156,6 +170,9 @@ function lockPiece() {
 function spawn() {
   current = next;
   next = randomPiece();
+  dropAccum = 0;
+  lockTimer = 0;
+  lockResets = 0;
   if (collide(current.shape, current.x, current.y)) {
     endGame();
   }
@@ -268,12 +285,22 @@ function togglePause() {
 function loop(ts) {
   const dt = ts - lastTime;
   lastTime = ts;
-  dropAccum += dt;
-  if (dropAccum >= dropInterval) {
-    dropAccum = 0;
-    if (!collide(current.shape, current.x, current.y + 1)) {
+  if (!collide(current.shape, current.x, current.y + 1)) {
+    // En el aire: cae por gravedad normal, sin lock delay.
+    lockTimer = 0;
+    dropAccum += dt;
+    if (dropAccum >= dropInterval) {
+      dropAccum = 0;
       current.y++;
-    } else {
+      lockResets = 0;
+    }
+  } else {
+    // Apoyada: espera el lock delay antes de fijarse, dando tiempo para
+    // deslizarla de lado bajo un saliente y rellenar huecos.
+    dropAccum = 0;
+    lockTimer += dt;
+    if (lockTimer >= LOCK_DELAY) {
+      lockTimer = 0;
       lockPiece();
     }
   }
@@ -310,6 +337,8 @@ function init() {
   gameOver = false;
   dropInterval = 1000;
   dropAccum = 0;
+  lockTimer = 0;
+  lockResets = 0;
   lastTime = performance.now();
   next = randomPiece();
   spawn();
@@ -326,10 +355,10 @@ document.addEventListener('keydown', e => {
   if (paused || gameOver) return;
   switch (e.code) {
     case 'ArrowLeft':
-      if (!collide(current.shape, current.x - 1, current.y)) current.x--;
+      if (!collide(current.shape, current.x - 1, current.y)) { current.x--; onPieceMoved(); }
       break;
     case 'ArrowRight':
-      if (!collide(current.shape, current.x + 1, current.y)) current.x++;
+      if (!collide(current.shape, current.x + 1, current.y)) { current.x++; onPieceMoved(); }
       break;
     case 'ArrowDown':
       softDrop();
