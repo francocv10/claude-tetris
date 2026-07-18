@@ -125,12 +125,44 @@ body {
   align-items: flex-start;
 }
 
+.board-wrap {
+  position: relative;
+}
+
 #board {
   display: block;
   border: 1px solid var(--board-border);
   background: var(--board-bg);
   border-radius: 4px;
   box-shadow: 0 0 40px var(--board-shadow);
+}
+
+.combo-popup {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: var(--accent);
+  text-shadow: 0 0 12px var(--accent);
+  pointer-events: none;
+}
+
+.combo-popup.hidden {
+  display: none;
+}
+
+.combo-popup.show {
+  animation: combo-pop 0.7s ease-out forwards;
+}
+
+@keyframes combo-pop {
+  0% { opacity: 0; transform: translate(-50%, -40%) scale(0.6); }
+  20% { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  40% { transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -65%) scale(1); }
 }
 
 /* ---- Panel lateral ---- */

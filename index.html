@@ -16,7 +16,10 @@
       </label>
     </div>
     <div class="game-container">
-      <canvas id="board" width="300" height="600"></canvas>
+      <div class="board-wrap">
+        <canvas id="board" width="300" height="600"></canvas>
+        <div id="combo-popup" class="combo-popup hidden"></div>
+      </div>
 
       <aside class="panel">
         <div class="panel-section">
@@ -30,6 +33,10 @@
         <div class="panel-section">
           <span class="label">LEVEL</span>
           <span class="value" id="level">1</span>
+        </div>
+        <div class="panel-section">
+          <span class="label">COMBO</span>
+          <span class="value" id="combo">—</span>
         </div>
 
         <div class="panel-section">

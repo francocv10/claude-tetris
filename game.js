@@ -37,6 +37,8 @@ const nextCtx = nextCanvas.getContext('2d');
 const scoreEl = document.getElementById('score');
 const linesEl = document.getElementById('lines');
 const levelEl = document.getElementById('level');
+const comboEl = document.getElementById('combo');
+const comboPopup = document.getElementById('combo-popup');
 const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
@@ -46,7 +48,7 @@ const themeToggle = document.getElementById('theme-toggle');
 const THEME_KEY = 'tetris-theme';
 let gridLineColor = '#22222e';
 
-let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let board, current, next, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -110,12 +112,16 @@ function clearLines() {
     }
   }
   if (cleared) {
+    combo++;
     lines += cleared;
-    score += (LINE_SCORES[cleared] || 0) * level;
+    score += (LINE_SCORES[cleared] || 0) * level * combo;
     level = Math.floor(lines / 10) + 1;
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
-    updateHUD();
+    if (combo > 1) showComboPopup(combo);
+  } else {
+    combo = 0;
   }
+  updateHUD();
 }
 
 function ghostY() {
@@ -160,6 +166,19 @@ function updateHUD() {
   scoreEl.textContent = score.toLocaleString();
   linesEl.textContent = lines;
   levelEl.textContent = level;
+  comboEl.textContent = combo > 1 ? `x${combo}` : '—';
+}
+
+let comboPopupTimer = null;
+
+function showComboPopup(multiplier) {
+  comboPopup.textContent = `COMBO x${multiplier}`;
+  comboPopup.classList.remove('hidden', 'show');
+  // Restart the animation even if a previous combo popup is still fading.
+  void comboPopup.offsetWidth;
+  comboPopup.classList.add('show');
+  clearTimeout(comboPopupTimer);
+  comboPopupTimer = setTimeout(() => comboPopup.classList.add('hidden'), 700);
 }
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
@@ -286,6 +305,7 @@ function init() {
   score = 0;
   lines = 0;
   level = 1;
+  combo = 0;
   paused = false;
   gameOver = false;
   dropInterval = 1000;
@@ -295,6 +315,8 @@ function init() {
   spawn();
   updateHUD();
   overlay.classList.add('hidden');
+  comboPopup.classList.add('hidden');
+  clearTimeout(comboPopupTimer);
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
