@@ -256,6 +256,7 @@ function loop(ts) {
       lockPiece();
     }
   }
+  if (gameOver || paused) return; // endGame() already cancelled the loop; don't draw/reschedule
   draw();
   animId = requestAnimationFrame(loop);
 }
