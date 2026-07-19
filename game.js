@@ -15,6 +15,7 @@ const COLORS = [
   '#ffb74d', // L - orange
   '#b0bec5', // 8 - tuerca (gris acero)
   '#fff176', // 9 - rayo (amarillo eléctrico)
+  '#ff5722', // 10 - bomba (naranja/rojo)
 ];
 
 const PIECES = [
@@ -34,6 +35,8 @@ const LINE_SCORES = [0, 100, 300, 500, 800];
 const LOCK_DELAY = 500;      // ms que la pieza espera apoyada antes de fijarse
 const MAX_LOCK_RESETS = 15;  // reinicios máximos por mover/rotar (evita stalling infinito)
 const POWER_UP_LINES = 10;   // líneas eliminadas necesarias para que aparezca el rayo
+const BOMB_CHANCE = 0.05;    // probabilidad de que una pieza generada sea una bomba
+const EXPLOSION_MS = 450;    // duración de la animación de explosión
 const MAX_ENERGY = 8;        // líneas acumuladas para llenar la barra de energía
 const PREVIEW_COUNT = 5;     // piezas visibles en la cola de "siguientes"
 const REVEAL_MS = 10000;     // duración del panel de "próximas 5" al activarse
@@ -87,6 +90,7 @@ let gridLineColor = '#22222e';
 let board, current, nextQueue, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId, lockTimer, lockResets, pendingPower, linesUntilPower;
 let mode, activeChallenge, challengeElapsed, challengeDone;
 let energy, held, abilityMenuOpen, revealRemaining;
+let explosions;
 
 // Habilidades cargables: cada entrada define su ejecución. Añadir una nueva
 // habilidad es solo agregar un objeto a este array; el menú se genera solo.
@@ -108,6 +112,7 @@ function randomPiece() {
 // Reconstruye una pieza de spawn a partir de un tipo guardado (usado por Hold).
 function pieceFromType(type) {
   if (type === 9) return lightningPiece();
+  if (type === 10) return bombPiece();
   const shape = PIECES[type].map(row => [...row]);
   return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
 }
@@ -115,7 +120,13 @@ function pieceFromType(type) {
 // Pieza especial de rayo: no forma parte de PIECES, así que randomPiece() nunca
 // la genera por azar. Se entrega manualmente cada POWER_UP_LINES líneas.
 function lightningPiece() {
-  return { type: 9, shape: [[9]], x: Math.floor(COLS / 2), y: 0, special: true };
+  return { type: 9, shape: [[9]], x: Math.floor(COLS / 2), y: 0, special: true, power: 'zap' };
+}
+
+// Pieza especial de bomba: aparece al azar (ver BOMB_CHANCE en refillQueue) y
+// destruye un área de 3x3 a su alrededor al fijarse.
+function bombPiece() {
+  return { type: 10, shape: [[10]], x: Math.floor(COLS / 2), y: 0, special: true, power: 'bomb' };
 }
 
 function collide(shape, ox, oy) {
@@ -227,7 +238,8 @@ function softDrop() {
 
 function lockPiece() {
   if (current.special) {
-    zap();
+    if (current.power === 'bomb') bomb();
+    else zap();
   } else {
     merge();
     clearLines();
@@ -253,9 +265,30 @@ function zap() {
   showComboPopup('⚡ RAYO');
 }
 
-// Mantiene la cola de "siguientes" siempre llena con PREVIEW_COUNT piezas.
+// Efecto de la bomba: limpia un área de 3x3 centrada en su posición, dejando
+// hueco (no colapsa el resto del tablero).
+function bomb() {
+  const cx = current.x, cy = current.y;
+  let removed = 0;
+  for (let r = cy - 1; r <= cy + 1; r++) {
+    for (let c = cx - 1; c <= cx + 1; c++) {
+      if (r < 0 || r >= ROWS || c < 0 || c >= COLS) continue;
+      if (board[r][c]) { board[r][c] = 0; removed++; }
+    }
+  }
+  score += removed * 60 * level;
+  combo = 0;
+  spawnExplosion(cx, cy);
+  updateHUD();
+  showComboPopup('💥 BOMBA');
+}
+
+// Mantiene la cola de "siguientes" siempre llena con PREVIEW_COUNT piezas. Cada
+// pieza nueva tiene una probabilidad BOMB_CHANCE de ser una bomba.
 function refillQueue() {
-  while (nextQueue.length < PREVIEW_COUNT) nextQueue.push(randomPiece());
+  while (nextQueue.length < PREVIEW_COUNT) {
+    nextQueue.push(Math.random() < BOMB_CHANCE ? bombPiece() : randomPiece());
+  }
 }
 
 // Extrae la próxima pieza de la cola. Si hay un rayo pendiente por líneas
@@ -367,6 +400,53 @@ function draw() {
   for (let r = 0; r < current.shape.length; r++)
     for (let c = 0; c < current.shape[r].length; c++)
       drawBlock(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
+
+  drawExplosions();
+}
+
+// Registra una explosión para animar en los próximos frames de draw().
+function spawnExplosion(cx, cy) {
+  explosions.push({ x: cx, y: cy, start: performance.now() });
+}
+
+// Dibuja una onda expansiva + partículas para cada explosión activa y descarta
+// las que ya expiraron. Se llama en cada draw(), así que la animación avanza
+// sola con el requestAnimationFrame del loop principal.
+function drawExplosions() {
+  if (!explosions.length) return;
+  const now = performance.now();
+  explosions = explosions.filter(exp => now - exp.start < EXPLOSION_MS);
+  for (const exp of explosions) {
+    const t = (now - exp.start) / EXPLOSION_MS;
+    const cx = (exp.x + 0.5) * BLOCK;
+    const cy = (exp.y + 0.5) * BLOCK;
+    const radius = BLOCK * 0.6 + t * BLOCK * 2.2;
+
+    ctx.save();
+    ctx.globalAlpha = 1 - t;
+    const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    gradient.addColorStop(0, 'rgba(255,241,182,0.95)');
+    gradient.addColorStop(0.45, 'rgba(255,140,40,0.85)');
+    gradient.addColorStop(1, 'rgba(255,61,0,0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // partículas radiales
+    const particleCount = 8;
+    ctx.fillStyle = `rgba(255,183,77,${1 - t})`;
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (Math.PI * 2 * i) / particleCount;
+      const dist = t * BLOCK * 2.5;
+      const px = cx + Math.cos(angle) * dist;
+      const py = cy + Math.sin(angle) * dist;
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(0, 3 - t * 3), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
 }
 
 function drawNext() {
@@ -604,6 +684,7 @@ function init(newMode, challenge) {
   abilityMenuOpen = false;
   abilityMenu.classList.add('hidden');
   revealRemaining = 0;
+  explosions = [];
   queuePreviewEl.classList.add('hidden');
   lastTime = performance.now();
   nextQueue = [];
