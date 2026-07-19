@@ -35,6 +35,18 @@ const LOCK_DELAY = 500;      // ms que la pieza espera apoyada antes de fijarse
 const MAX_LOCK_RESETS = 15;  // reinicios máximos por mover/rotar (evita stalling infinito)
 const POWER_UP_LINES = 10;   // líneas eliminadas necesarias para que aparezca el rayo
 
+// Modo desafíos: cada entrada define un objetivo de líneas contra un límite de
+// tiempo. Agregar un nuevo desafío es solo añadir una entrada a este array.
+const CHALLENGES = [
+  {
+    id: 'sprint40',
+    name: 'Sprint 40',
+    description: 'Limpia 40 líneas en 2 minutos',
+    goalLines: 40,
+    timeLimit: 120000, // ms
+  },
+];
+
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 const nextCanvas = document.getElementById('next-canvas');
@@ -48,12 +60,20 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
+const menuBtn = document.getElementById('menu-btn');
 const themeToggle = document.getElementById('theme-toggle');
+const startScreen = document.getElementById('start-screen');
+const modeClassicBtn = document.getElementById('mode-classic');
+const challengeListEl = document.getElementById('challenge-list');
+const challengeHud = document.getElementById('challenge-hud');
+const challengeTimerEl = document.getElementById('challenge-timer');
+const challengeGoalEl = document.getElementById('challenge-goal');
 
 const THEME_KEY = 'tetris-theme';
 let gridLineColor = '#22222e';
 
 let board, current, next, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId, lockTimer, lockResets, pendingPower, linesUntilPower;
+let mode, activeChallenge, challengeElapsed, challengeDone;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -148,6 +168,9 @@ function clearLines() {
     combo = 0;
   }
   updateHUD();
+  if (mode === 'challenge' && !challengeDone && lines >= activeChallenge.goalLines) {
+    endChallenge(true);
+  }
 }
 
 function ghostY() {
@@ -181,6 +204,7 @@ function lockPiece() {
     merge();
     clearLines();
   }
+  if (gameOver || challengeDone) return; // el desafío/partida ya terminó al limpiar líneas
   spawn();
 }
 
@@ -219,6 +243,20 @@ function updateHUD() {
   linesEl.textContent = lines;
   levelEl.textContent = level;
   comboEl.textContent = combo > 1 ? `x${combo}` : '—';
+  if (mode === 'challenge') {
+    challengeGoalEl.textContent = `${Math.min(lines, activeChallenge.goalLines)} / ${activeChallenge.goalLines}`;
+  }
+}
+
+function formatTime(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function toggleChallengeHUD(show) {
+  challengeHud.classList.toggle('hidden', !show);
 }
 
 let comboPopupTimer = null;
@@ -298,8 +336,30 @@ function drawNext() {
 function endGame() {
   gameOver = true;
   cancelAnimationFrame(animId);
-  overlayTitle.textContent = 'GAME OVER';
-  overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
+  if (mode === 'challenge' && !challengeDone) {
+    challengeDone = true;
+    overlayTitle.textContent = 'DESAFÍO FALLIDO';
+    overlayScore.textContent = `${lines} / ${activeChallenge.goalLines} líneas — Puntuación: ${score.toLocaleString()}`;
+  } else {
+    overlayTitle.textContent = 'GAME OVER';
+    overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
+  }
+  overlay.classList.remove('hidden');
+}
+
+// Fin del desafío por objetivo cumplido o por tiempo agotado (game over lo
+// maneja endGame() reutilizando el mensaje de fallo).
+function endChallenge(success) {
+  challengeDone = true;
+  gameOver = true;
+  cancelAnimationFrame(animId);
+  if (success) {
+    overlayTitle.textContent = '¡DESAFÍO COMPLETADO!';
+    overlayScore.textContent = `Tiempo: ${formatTime(challengeElapsed)} — Puntuación: ${score.toLocaleString()}`;
+  } else {
+    overlayTitle.textContent = 'DESAFÍO FALLIDO';
+    overlayScore.textContent = `${lines} / ${activeChallenge.goalLines} líneas — Puntuación: ${score.toLocaleString()}`;
+  }
   overlay.classList.remove('hidden');
 }
 
@@ -320,6 +380,16 @@ function togglePause() {
 function loop(ts) {
   const dt = ts - lastTime;
   lastTime = ts;
+  if (mode === 'challenge' && !challengeDone) {
+    challengeElapsed += dt;
+    if (challengeElapsed >= activeChallenge.timeLimit) {
+      challengeElapsed = activeChallenge.timeLimit;
+      challengeTimerEl.textContent = formatTime(0);
+      endChallenge(false);
+      return; // endChallenge() ya canceló el loop; no dibujar/reprogramar
+    }
+    challengeTimerEl.textContent = formatTime(activeChallenge.timeLimit - challengeElapsed);
+  }
   if (!collide(current.shape, current.x, current.y + 1)) {
     // En el aire: cae por gravedad normal, sin lock delay.
     lockTimer = 0;
@@ -362,7 +432,11 @@ themeToggle?.addEventListener('change', () => {
   drawNext();
 });
 
-function init() {
+function init(newMode, challenge) {
+  mode = newMode ?? mode ?? 'classic';
+  activeChallenge = challenge ?? activeChallenge ?? null;
+  challengeElapsed = 0;
+  challengeDone = false;
   board = createBoard();
   score = 0;
   lines = 0;
@@ -380,11 +454,43 @@ function init() {
   next = randomPiece();
   spawn();
   updateHUD();
+  toggleChallengeHUD(mode === 'challenge');
+  if (mode === 'challenge') {
+    challengeTimerEl.textContent = formatTime(activeChallenge.timeLimit);
+    challengeGoalEl.textContent = `0 / ${activeChallenge.goalLines}`;
+  }
   overlay.classList.add('hidden');
+  startScreen.classList.add('hidden');
   comboPopup.classList.add('hidden');
   clearTimeout(comboPopupTimer);
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
+}
+
+function startClassic() {
+  init('classic', null);
+}
+
+function startChallenge(challenge) {
+  init('challenge', challenge);
+}
+
+function showStartScreen() {
+  gameOver = true; // evita que el loop en curso (si lo hubiera) siga corriendo
+  cancelAnimationFrame(animId);
+  overlay.classList.add('hidden');
+  startScreen.classList.remove('hidden');
+}
+
+function renderChallengeList() {
+  challengeListEl.innerHTML = '';
+  for (const challenge of CHALLENGES) {
+    const btn = document.createElement('button');
+    btn.className = 'challenge-btn';
+    btn.textContent = `${challenge.name} — ${challenge.description}`;
+    btn.addEventListener('click', () => startChallenge(challenge));
+    challengeListEl.appendChild(btn);
+  }
 }
 
 document.addEventListener('keydown', e => {
@@ -412,7 +518,10 @@ document.addEventListener('keydown', e => {
   updateHUD();
 });
 
-restartBtn.addEventListener('click', init);
+restartBtn.addEventListener('click', () => init(mode, activeChallenge));
+menuBtn.addEventListener('click', showStartScreen);
+modeClassicBtn.addEventListener('click', startClassic);
 
 initTheme();
-init();
+renderChallengeList();
+showStartScreen();

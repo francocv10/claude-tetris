@@ -39,6 +39,13 @@
           <span class="value" id="combo">—</span>
         </div>
 
+        <div class="panel-section challenge-hud hidden" id="challenge-hud">
+          <span class="label">TIEMPO</span>
+          <span class="value" id="challenge-timer">2:00</span>
+          <span class="label">OBJETIVO</span>
+          <span class="value" id="challenge-goal">0 / 40</span>
+        </div>
+
         <div class="panel-section">
           <span class="label">NEXT</span>
           <canvas id="next-canvas" width="120" height="120"></canvas>
@@ -61,7 +68,19 @@
       <div class="overlay-box">
         <p id="overlay-title">GAME OVER</p>
         <p id="overlay-score"></p>
-        <button id="restart-btn">Reiniciar</button>
+        <div class="overlay-actions">
+          <button id="restart-btn">Reiniciar</button>
+          <button id="menu-btn">Menú</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="start-screen" class="overlay">
+      <div class="overlay-box">
+        <p id="start-title">TETRIS</p>
+        <button id="mode-classic">Modo Clásico</button>
+        <span class="label">DESAFÍOS</span>
+        <div id="challenge-list" class="challenge-list"></div>
       </div>
     </div>
   </div>
