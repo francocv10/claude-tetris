@@ -34,6 +34,7 @@ const LINE_SCORES = [0, 100, 300, 500, 800];
 const LOCK_DELAY = 500;      // ms que la pieza espera apoyada antes de fijarse
 const MAX_LOCK_RESETS = 15;  // reinicios máximos por mover/rotar (evita stalling infinito)
 const POWER_UP_LINES = 10;   // líneas eliminadas necesarias para que aparezca el rayo
+const MAX_ENERGY = 8;        // líneas acumuladas para llenar la barra de energía
 
 // Modo desafíos: cada entrada define un objetivo de líneas contra un límite de
 // tiempo. Agregar un nuevo desafío es solo añadir una entrada a este array.
@@ -68,12 +69,25 @@ const challengeListEl = document.getElementById('challenge-list');
 const challengeHud = document.getElementById('challenge-hud');
 const challengeTimerEl = document.getElementById('challenge-timer');
 const challengeGoalEl = document.getElementById('challenge-goal');
+const energyBarEl = document.getElementById('energy-bar');
+const energyFillEl = document.getElementById('energy-fill');
+const holdCanvas = document.getElementById('hold-canvas');
+const holdCtx = holdCanvas.getContext('2d');
+const abilityMenu = document.getElementById('ability-menu');
+const abilityListEl = document.getElementById('ability-list');
 
 const THEME_KEY = 'tetris-theme';
 let gridLineColor = '#22222e';
 
 let board, current, next, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId, lockTimer, lockResets, pendingPower, linesUntilPower;
 let mode, activeChallenge, challengeElapsed, challengeDone;
+let energy, held, abilityMenuOpen;
+
+// Habilidades cargables: cada entrada define su ejecución. Añadir una nueva
+// habilidad es solo agregar un objeto a este array; el menú se genera solo.
+const ABILITIES = [
+  { id: 'hold', name: 'HOLD', description: 'Reserva / intercambia la pieza actual', execute: doHold },
+];
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
@@ -81,6 +95,13 @@ function createBoard() {
 
 function randomPiece() {
   const type = Math.floor(Math.random() * (PIECES.length - 1)) + 1;
+  const shape = PIECES[type].map(row => [...row]);
+  return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
+}
+
+// Reconstruye una pieza de spawn a partir de un tipo guardado (usado por Hold).
+function pieceFromType(type) {
+  if (type === 9) return lightningPiece();
   const shape = PIECES[type].map(row => [...row]);
   return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
 }
@@ -159,6 +180,7 @@ function clearLines() {
     level = Math.floor(lines / 10) + 1;
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
     if (combo > 1) showComboPopup(`COMBO x${combo}`);
+    energy = Math.min(MAX_ENERGY, energy + cleared);
     linesUntilPower -= cleared;
     if (linesUntilPower <= 0) {
       pendingPower = true;
@@ -243,6 +265,8 @@ function updateHUD() {
   linesEl.textContent = lines;
   levelEl.textContent = level;
   comboEl.textContent = combo > 1 ? `x${combo}` : '—';
+  energyFillEl.style.width = `${(energy / MAX_ENERGY) * 100}%`;
+  energyBarEl.classList.toggle('full', energy >= MAX_ENERGY);
   if (mode === 'challenge') {
     challengeGoalEl.textContent = `${Math.min(lines, activeChallenge.goalLines)} / ${activeChallenge.goalLines}`;
   }
@@ -333,6 +357,78 @@ function drawNext() {
       drawBlock(nextCtx, offX + c, offY + r, shape[r][c], NB);
 }
 
+function drawHold() {
+  const NB = 30;
+  holdCtx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
+  if (held === null) return;
+  const shape = PIECES[held].map(row => [...row]);
+  const offX = Math.floor((4 - shape[0].length) / 2);
+  const offY = Math.floor((4 - shape.length) / 2);
+  for (let r = 0; r < shape.length; r++)
+    for (let c = 0; c < shape[r].length; c++)
+      drawBlock(holdCtx, offX + c, offY + r, shape[r][c], NB);
+}
+
+// Reserva la pieza actual o la intercambia con la reservada previamente.
+function doHold() {
+  const currentType = current.type;
+  if (held === null) {
+    held = currentType;
+    current = next;
+    next = pendingPower ? lightningPiece() : randomPiece();
+    pendingPower = false;
+  } else {
+    const swapType = held;
+    held = currentType;
+    current = pieceFromType(swapType);
+  }
+  dropAccum = 0;
+  lockTimer = 0;
+  lockResets = 0;
+  if (collide(current.shape, current.x, current.y)) {
+    endGame();
+  }
+  drawHold();
+  drawNext();
+}
+
+function renderAbilityMenu() {
+  abilityListEl.innerHTML = '';
+  for (const ability of ABILITIES) {
+    const btn = document.createElement('button');
+    btn.className = 'challenge-btn';
+    btn.textContent = `${ability.name} — ${ability.description}`;
+    btn.addEventListener('click', () => useAbility(ability));
+    abilityListEl.appendChild(btn);
+  }
+}
+
+function openAbilityMenu() {
+  if (paused || gameOver || abilityMenuOpen) return;
+  if (energy < MAX_ENERGY) return;
+  abilityMenuOpen = true;
+  cancelAnimationFrame(animId);
+  abilityMenu.classList.remove('hidden');
+}
+
+function closeAbilityMenu() {
+  abilityMenuOpen = false;
+  abilityMenu.classList.add('hidden');
+  lastTime = performance.now();
+  animId = requestAnimationFrame(loop);
+}
+
+function useAbility(ability) {
+  abilityMenuOpen = false;
+  abilityMenu.classList.add('hidden');
+  energy = 0;
+  updateHUD();
+  ability.execute();
+  draw();
+  lastTime = performance.now();
+  animId = requestAnimationFrame(loop);
+}
+
 function endGame() {
   gameOver = true;
   cancelAnimationFrame(animId);
@@ -364,7 +460,7 @@ function endChallenge(success) {
 }
 
 function togglePause() {
-  if (gameOver) return;
+  if (gameOver || abilityMenuOpen) return;
   paused = !paused;
   if (!paused) {
     lastTime = performance.now();
@@ -450,9 +546,14 @@ function init(newMode, challenge) {
   lockResets = 0;
   pendingPower = false;
   linesUntilPower = POWER_UP_LINES;
+  energy = 0;
+  held = null;
+  abilityMenuOpen = false;
+  abilityMenu.classList.add('hidden');
   lastTime = performance.now();
   next = randomPiece();
   spawn();
+  drawHold();
   updateHUD();
   toggleChallengeHUD(mode === 'challenge');
   if (mode === 'challenge') {
@@ -495,7 +596,13 @@ function renderChallengeList() {
 
 document.addEventListener('keydown', e => {
   if (e.code === 'KeyP') { togglePause(); return; }
-  if (paused || gameOver) return;
+  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+    if (abilityMenuOpen) closeAbilityMenu();
+    else openAbilityMenu();
+    return;
+  }
+  if (e.code === 'Escape' && abilityMenuOpen) { closeAbilityMenu(); return; }
+  if (paused || gameOver || abilityMenuOpen) return;
   switch (e.code) {
     case 'ArrowLeft':
       if (!collide(current.shape, current.x - 1, current.y)) { current.x--; onPieceMoved(); }
@@ -524,4 +631,5 @@ modeClassicBtn.addEventListener('click', startClassic);
 
 initTheme();
 renderChallengeList();
+renderAbilityMenu();
 showStartScreen();

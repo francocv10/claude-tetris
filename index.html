@@ -16,12 +16,7 @@
       </label>
     </div>
     <div class="game-container">
-      <div class="board-wrap">
-        <canvas id="board" width="300" height="600"></canvas>
-        <div id="combo-popup" class="combo-popup hidden"></div>
-      </div>
-
-      <aside class="panel">
+      <aside class="panel panel-left">
         <div class="panel-section">
           <span class="label">SCORE</span>
           <span class="value" id="score">0</span>
@@ -47,6 +42,25 @@
         </div>
 
         <div class="panel-section">
+          <span class="label">ENERGÍA</span>
+          <div class="energy-bar" id="energy-bar">
+            <div class="energy-fill" id="energy-fill"></div>
+          </div>
+        </div>
+      </aside>
+
+      <div class="board-wrap">
+        <canvas id="board" width="300" height="600"></canvas>
+        <div id="combo-popup" class="combo-popup hidden"></div>
+      </div>
+
+      <aside class="panel panel-right">
+        <div class="panel-section">
+          <span class="label">HOLD</span>
+          <canvas id="hold-canvas" width="120" height="120"></canvas>
+        </div>
+
+        <div class="panel-section">
           <span class="label">NEXT</span>
           <canvas id="next-canvas" width="120" height="120"></canvas>
         </div>
@@ -58,6 +72,7 @@
             <li><kbd>↑</kbd> rotar</li>
             <li><kbd>↓</kbd> bajar</li>
             <li><kbd>Space</kbd> caída</li>
+            <li><kbd>Shift</kbd> habilidad</li>
             <li><kbd>P</kbd> pausa</li>
           </ul>
         </div>
@@ -72,6 +87,13 @@
           <button id="restart-btn">Reiniciar</button>
           <button id="menu-btn">Menú</button>
         </div>
+      </div>
+    </div>
+
+    <div id="ability-menu" class="overlay hidden">
+      <div class="overlay-box">
+        <p class="label">ELIGE UNA HABILIDAD</p>
+        <div id="ability-list" class="challenge-list"></div>
       </div>
     </div>
 

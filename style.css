@@ -199,7 +199,29 @@ body {
   display: none;
 }
 
-#next-canvas {
+/* ---- Barra de energía ---- */
+.energy-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--kbd-bg);
+  border: 1px solid var(--kbd-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.energy-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.energy-bar.full .energy-fill {
+  box-shadow: 0 0 8px var(--accent);
+}
+
+#next-canvas,
+#hold-canvas {
   display: block;
   border: 1px solid var(--board-border);
   background: var(--board-bg);
