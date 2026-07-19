@@ -35,6 +35,8 @@ const LOCK_DELAY = 500;      // ms que la pieza espera apoyada antes de fijarse
 const MAX_LOCK_RESETS = 15;  // reinicios máximos por mover/rotar (evita stalling infinito)
 const POWER_UP_LINES = 10;   // líneas eliminadas necesarias para que aparezca el rayo
 const MAX_ENERGY = 8;        // líneas acumuladas para llenar la barra de energía
+const PREVIEW_COUNT = 5;     // piezas visibles en la cola de "siguientes"
+const REVEAL_MS = 10000;     // duración del panel de "próximas 5" al activarse
 
 // Modo desafíos: cada entrada define un objetivo de líneas contra un límite de
 // tiempo. Agregar un nuevo desafío es solo añadir una entrada a este array.
@@ -75,18 +77,22 @@ const holdCanvas = document.getElementById('hold-canvas');
 const holdCtx = holdCanvas.getContext('2d');
 const abilityMenu = document.getElementById('ability-menu');
 const abilityListEl = document.getElementById('ability-list');
+const queuePreviewEl = document.getElementById('queue-preview');
+const queueCanvas = document.getElementById('queue-canvas');
+const queueCtx = queueCanvas.getContext('2d');
 
 const THEME_KEY = 'tetris-theme';
 let gridLineColor = '#22222e';
 
-let board, current, next, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId, lockTimer, lockResets, pendingPower, linesUntilPower;
+let board, current, nextQueue, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId, lockTimer, lockResets, pendingPower, linesUntilPower;
 let mode, activeChallenge, challengeElapsed, challengeDone;
-let energy, held, abilityMenuOpen;
+let energy, held, abilityMenuOpen, revealRemaining;
 
 // Habilidades cargables: cada entrada define su ejecución. Añadir una nueva
 // habilidad es solo agregar un objeto a este array; el menú se genera solo.
 const ABILITIES = [
   { id: 'hold', name: 'HOLD', description: 'Reserva / intercambia la pieza actual', execute: doHold },
+  { id: 'next5', name: 'PRÓXIMAS 5', description: 'Revela las 5 piezas siguientes por 10s', execute: doRevealNext },
 ];
 
 function createBoard() {
@@ -247,10 +253,27 @@ function zap() {
   showComboPopup('⚡ RAYO');
 }
 
+// Mantiene la cola de "siguientes" siempre llena con PREVIEW_COUNT piezas.
+function refillQueue() {
+  while (nextQueue.length < PREVIEW_COUNT) nextQueue.push(randomPiece());
+}
+
+// Extrae la próxima pieza de la cola. Si hay un rayo pendiente por líneas
+// acumuladas, lo inserta al frente de la cola (misma semántica que antes:
+// se ve venir en el preview y cae en el siguiente spawn).
+function advanceQueue() {
+  const piece = nextQueue.shift();
+  if (pendingPower) {
+    nextQueue.unshift(lightningPiece());
+    pendingPower = false;
+  }
+  refillQueue();
+  if (revealRemaining > 0) drawQueuePreview();
+  return piece;
+}
+
 function spawn() {
-  current = next;
-  next = pendingPower ? lightningPiece() : randomPiece();
-  pendingPower = false;
+  current = advanceQueue();
   dropAccum = 0;
   lockTimer = 0;
   lockResets = 0;
@@ -349,12 +372,30 @@ function draw() {
 function drawNext() {
   const NB = 30;
   nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
-  const shape = next.shape;
+  const shape = nextQueue[0].shape;
   const offX = Math.floor((4 - shape[0].length) / 2);
   const offY = Math.floor((4 - shape.length) / 2);
   for (let r = 0; r < shape.length; r++)
     for (let c = 0; c < shape[r].length; c++)
       drawBlock(nextCtx, offX + c, offY + r, shape[r][c], NB);
+}
+
+// Dibuja las PREVIEW_COUNT piezas de la cola apiladas verticalmente, para el
+// panel temporal de la habilidad "PRÓXIMAS 5".
+function drawQueuePreview() {
+  const NB = 18;
+  const slotH = queueCanvas.height / PREVIEW_COUNT;
+  queueCtx.clearRect(0, 0, queueCanvas.width, queueCanvas.height);
+  for (let i = 0; i < PREVIEW_COUNT; i++) {
+    const piece = nextQueue[i];
+    if (!piece) continue;
+    const shape = piece.shape;
+    const offX = (queueCanvas.width / NB - shape[0].length) / 2;
+    const offY = i * (slotH / NB) + (slotH / NB - shape.length) / 2;
+    for (let r = 0; r < shape.length; r++)
+      for (let c = 0; c < shape[r].length; c++)
+        drawBlock(queueCtx, offX + c, offY + r, shape[r][c], NB);
+  }
 }
 
 function drawHold() {
@@ -374,9 +415,7 @@ function doHold() {
   const currentType = current.type;
   if (held === null) {
     held = currentType;
-    current = next;
-    next = pendingPower ? lightningPiece() : randomPiece();
-    pendingPower = false;
+    current = advanceQueue();
   } else {
     const swapType = held;
     held = currentType;
@@ -390,6 +429,13 @@ function doHold() {
   }
   drawHold();
   drawNext();
+}
+
+// Habilidad: revela las próximas PREVIEW_COUNT piezas por REVEAL_MS ms.
+function doRevealNext() {
+  revealRemaining = REVEAL_MS;
+  queuePreviewEl.classList.remove('hidden');
+  drawQueuePreview();
 }
 
 function renderAbilityMenu() {
@@ -476,6 +522,13 @@ function togglePause() {
 function loop(ts) {
   const dt = ts - lastTime;
   lastTime = ts;
+  if (revealRemaining > 0) {
+    revealRemaining -= dt;
+    if (revealRemaining <= 0) {
+      revealRemaining = 0;
+      queuePreviewEl.classList.add('hidden');
+    }
+  }
   if (mode === 'challenge' && !challengeDone) {
     challengeElapsed += dt;
     if (challengeElapsed >= activeChallenge.timeLimit) {
@@ -550,8 +603,11 @@ function init(newMode, challenge) {
   held = null;
   abilityMenuOpen = false;
   abilityMenu.classList.add('hidden');
+  revealRemaining = 0;
+  queuePreviewEl.classList.add('hidden');
   lastTime = performance.now();
-  next = randomPiece();
+  nextQueue = [];
+  refillQueue();
   spawn();
   drawHold();
   updateHUD();

@@ -221,11 +221,16 @@ body {
 }
 
 #next-canvas,
-#hold-canvas {
+#hold-canvas,
+#queue-canvas {
   display: block;
   border: 1px solid var(--board-border);
   background: var(--board-bg);
   border-radius: 4px;
+}
+
+.queue-preview.hidden {
+  display: none;
 }
 
 /* ---- Controles ---- */

@@ -39,6 +39,7 @@ Es una versión jugable del Tetris clásico con todas las mecánicas que esperar
 - **Soft drop** (bajada acelerada) y **hard drop** (caída instantánea).
 - **Pieza fantasma** (_ghost piece_): muestra dónde aterrizará la pieza actual.
 - **Vista previa** de la siguiente pieza.
+- **Habilidades cargables**: al llenar la barra de energía se desbloquea un menú (tecla `Shift`) con habilidades como reservar/intercambiar pieza (`HOLD`) o revelar las 5 piezas siguientes durante 10 segundos (`PRÓXIMAS 5`).
 - **Sistema de puntuación** clásico de Tetris (100 / 300 / 500 / 800 multiplicado por nivel).
 - **Niveles** que aumentan cada 10 líneas y aceleran la caída.
 - **Pausa** y **Game Over** con opción de reinicio.
@@ -84,6 +85,7 @@ Después abre `http://localhost:8000` en el navegador.
 | `↑` o `X` | Rotar la pieza en sentido horario |
 | `↓`       | Soft drop (bajar más rápido)      |
 | `Espacio` | Hard drop (caída instantánea)     |
+| `Shift`   | Abrir/cerrar el menú de habilidades (requiere energía llena) |
 | `P`       | Pausar / reanudar                 |
 
 ---
@@ -97,8 +99,9 @@ El juego se compone de tres archivos que cooperan:
 Define la estructura visual:
 
 - Un `<canvas id="board">` de **300 × 600** píxeles donde se renderiza el tablero.
-- Un panel lateral con `SCORE`, `LINES`, `LEVEL`, vista de la siguiente pieza y la lista de controles.
-- Un overlay para los estados **PAUSA** y **GAME OVER**.
+- Un panel lateral con `SCORE`, `LINES`, `LEVEL`, la barra de energía, vista de la siguiente pieza y la lista de controles.
+- Un panel oculto (`PRÓXIMAS 5`) que se muestra al activar esa habilidad, con las 5 piezas de la cola.
+- Un overlay para los estados **PAUSA** y **GAME OVER**, y otro para el menú de habilidades.
 
 ### 2. `style.css`
 
@@ -123,17 +126,18 @@ Contiene toda la lógica del juego. A grandes rasgos:
 ```
 init()
   ├─ createBoard()                  → matriz vacía
-  ├─ next = randomPiece()
-  ├─ spawn()                        → mueve next a current y genera nueva next
+  ├─ nextQueue = []; refillQueue()  → cola pre-generada de 5 piezas
+  ├─ spawn()                        → advanceQueue() saca la primera y rellena la cola
   └─ requestAnimationFrame(loop)
         ↓
    loop(timestamp)
      ├─ acumula dt
      ├─ si dt ≥ dropInterval → baja la pieza o llama a lockPiece()
+     ├─ si hay un revelado activo (habilidad PRÓXIMAS 5) → descuenta su temporizador
      ├─ draw()  (grid + tablero + ghost + pieza actual)
      └─ requestAnimationFrame(loop)
 
-   keydown → mover / rotar / soft-drop / hard-drop / pausa
+   keydown → mover / rotar / soft-drop / hard-drop / pausa / abrir menú de habilidades
 ```
 
 Cuando una pieza recién generada ya colisiona al aparecer (`spawn`), se dispara `endGame()` y se muestra el overlay de **Game Over**.
