@@ -84,8 +84,11 @@ const queuePreviewEl = document.getElementById('queue-preview');
 const queueCanvas = document.getElementById('queue-canvas');
 const queueCtx = queueCanvas.getContext('2d');
 
+const skinSelect = document.getElementById('skin-select');
 const THEME_KEY = 'tetris-theme';
+const SKIN_KEY = 'tetris-skin';
 let gridLineColor = '#22222e';
+let currentSkin = 'retro';
 
 let board, current, nextQueue, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId, lockTimer, lockResets, pendingPower, linesUntilPower;
 let mode, activeChallenge, challengeElapsed, challengeDone;
@@ -351,16 +354,98 @@ function showComboPopup(text) {
   comboPopupTimer = setTimeout(() => comboPopup.classList.add('hidden'), 700);
 }
 
+// Rectángulo redondeado con arcTo manual (compatible con navegadores sin roundRect).
+function roundedRectPath(context, px, py, w, h, r) {
+  context.beginPath();
+  context.moveTo(px + r, py);
+  context.arcTo(px + w, py, px + w, py + h, r);
+  context.arcTo(px + w, py + h, px, py + h, r);
+  context.arcTo(px, py + h, px, py, r);
+  context.arcTo(px, py, px + w, py, r);
+  context.closePath();
+}
+
+function drawBlockRetro(context, px, py, size, color) {
+  context.fillStyle = color;
+  context.fillRect(px + 1, py + 1, size - 2, size - 2);
+  context.fillStyle = 'rgba(255,255,255,0.12)';
+  context.fillRect(px + 1, py + 1, size - 2, 4);
+}
+
+function drawBlockNeon(context, px, py, size, color) {
+  context.shadowColor = color;
+  context.shadowBlur = 12;
+  context.fillStyle = 'rgba(0,0,0,0.85)';
+  context.fillRect(px + 3, py + 3, size - 6, size - 6);
+  context.strokeStyle = color;
+  context.lineWidth = 2;
+  context.strokeRect(px + 3, py + 3, size - 6, size - 6);
+  context.shadowBlur = 0;
+  context.shadowColor = 'transparent';
+  context.fillStyle = color;
+  context.globalAlpha *= 0.35;
+  context.fillRect(px + 6, py + 6, size - 12, size - 12);
+}
+
+function drawBlockPastel(context, px, py, size, color) {
+  context.fillStyle = color;
+  roundedRectPath(context, px + 2, py + 2, size - 4, size - 4, size * 0.28);
+  context.fill();
+  context.fillStyle = 'rgba(255,255,255,0.35)';
+  roundedRectPath(context, px + 5, py + 5, Math.max(2, size - 10), 4, 2);
+  context.fill();
+}
+
+function drawBlockPixel(context, px, py, size, color) {
+  const x0 = px + 1, y0 = py + 1, s = size - 2;
+  context.fillStyle = color;
+  context.fillRect(x0, y0, s, s);
+  // textura: sub-píxeles alternados claros/oscuros
+  const cell = Math.max(2, Math.floor(s / 6));
+  for (let i = 0; i * cell < s; i++) {
+    for (let j = 0; j * cell < s; j++) {
+      if ((i + j) % 2) continue;
+      context.fillStyle = (i * 3 + j) % 4 === 0 ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.12)';
+      context.fillRect(x0 + i * cell, y0 + j * cell, Math.min(cell, s - i * cell), Math.min(cell, s - j * cell));
+    }
+  }
+  // bisel: claro arriba-izquierda, oscuro abajo-derecha
+  const b = Math.max(2, Math.round(s / 8));
+  context.fillStyle = 'rgba(255,255,255,0.55)';
+  context.fillRect(x0, y0, s, b);
+  context.fillRect(x0, y0, b, s);
+  context.fillStyle = 'rgba(0,0,0,0.45)';
+  context.fillRect(x0, y0 + s - b, s, b);
+  context.fillRect(x0 + s - b, y0, b, s);
+}
+
+// Skins: cada una define su paleta (mismo orden que COLORS) y su función de bloque.
+const SKINS = {
+  retro: { name: 'Retro', colors: COLORS, draw: drawBlockRetro },
+  neon: {
+    name: 'Neon',
+    colors: [null, '#00f0ff', '#fff700', '#d400ff', '#39ff14', '#ff1744', '#2979ff', '#ff9100', '#cfd8dc', '#ffff00', '#ff3d00'],
+    draw: drawBlockNeon,
+  },
+  pastel: {
+    name: 'Pastel',
+    colors: [null, '#a8e6ef', '#fff1b8', '#d9b8e8', '#bfe8c3', '#f5b7b1', '#aecbfa', '#fbd3a4', '#cfd8dc', '#fff9b0', '#ffab91'],
+    draw: drawBlockPastel,
+  },
+  pixel: {
+    name: 'Pixel art',
+    colors: [null, '#29b6f6', '#fbc02d', '#8e24aa', '#43a047', '#e53935', '#3949ab', '#fb8c00', '#78909c', '#ffee58', '#d84315'],
+    draw: drawBlockPixel,
+  },
+};
+
 function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
-  const color = COLORS[colorIndex];
+  const skin = SKINS[currentSkin] || SKINS.retro;
+  context.save();
   context.globalAlpha = alpha ?? 1;
-  context.fillStyle = color;
-  context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
-  // highlight
-  context.fillStyle = 'rgba(255,255,255,0.12)';
-  context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
-  context.globalAlpha = 1;
+  skin.draw(context, x * size, y * size, size, skin.colors[colorIndex]);
+  context.restore();
 }
 
 function drawGrid() {
@@ -655,10 +740,39 @@ function initTheme() {
   applyTheme(saved === 'light' ? 'light' : 'dark');
 }
 
-themeToggle?.addEventListener('change', () => {
-  applyTheme(themeToggle.checked ? 'light' : 'dark');
+// Redibuja todos los canvas; en la pantalla de inicio `current` aún no existe.
+function redrawAll() {
+  if (!current) return;
   draw();
   drawNext();
+  drawHold();
+  if (!queuePreviewEl.classList.contains('hidden')) drawQueuePreview();
+}
+
+themeToggle?.addEventListener('change', () => {
+  applyTheme(themeToggle.checked ? 'light' : 'dark');
+  redrawAll();
+});
+
+function applySkin(skin) {
+  if (!SKINS[skin]) skin = 'retro';
+  currentSkin = skin;
+  for (const key of Object.keys(SKINS)) document.body.classList.toggle('skin-' + key, key === skin);
+  gridLineColor = getComputedStyle(document.body).getPropertyValue('--grid-line').trim() || gridLineColor;
+  if (skinSelect) skinSelect.value = skin;
+  try { localStorage.setItem(SKIN_KEY, skin); } catch (e) { /* sin almacenamiento */ }
+}
+
+function initSkin() {
+  let saved = null;
+  try { saved = localStorage.getItem(SKIN_KEY); } catch (e) { /* sin almacenamiento */ }
+  applySkin(saved);
+}
+
+skinSelect?.addEventListener('change', () => {
+  applySkin(skinSelect.value);
+  skinSelect.blur();
+  redrawAll();
 });
 
 function init(newMode, challenge) {
@@ -732,6 +846,8 @@ function renderChallengeList() {
 }
 
 document.addEventListener('keydown', e => {
+  // El <select> de skin consume flechas/Space/Enter; P y Shift siguen funcionando.
+  if (e.target && e.target.tagName === 'SELECT' && /^(Arrow|Space|Enter|KeyX)/.test(e.code)) return;
   if (e.code === 'KeyP') { togglePause(); return; }
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
     if (abilityMenuOpen) closeAbilityMenu();
@@ -767,6 +883,7 @@ menuBtn.addEventListener('click', showStartScreen);
 modeClassicBtn.addEventListener('click', startClassic);
 
 initTheme();
+initSkin();
 renderChallengeList();
 renderAbilityMenu();
 showStartScreen();

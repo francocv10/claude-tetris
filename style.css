@@ -46,6 +46,24 @@ body.light-theme {
   --board-shadow: rgba(0, 0, 0, 0.15);
 }
 
+/* Skin Neon: tablero y paneles de canvas siempre oscuros, incluso en tema claro */
+body.skin-neon {
+  --board-bg: #000000;
+  --grid-line: #1b1b2b;
+  --board-border: #00f0ff;
+  --board-shadow: rgba(0, 240, 255, 0.45);
+}
+
+.skin-select {
+  margin-left: auto;
+  background: var(--kbd-bg);
+  color: var(--text);
+  border: 1px solid var(--kbd-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
