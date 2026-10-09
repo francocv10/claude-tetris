@@ -42,7 +42,7 @@ Es una versión jugable del Tetris clásico con todas las mecánicas que esperar
 - **Habilidades cargables**: al llenar la barra de energía se desbloquea un menú (tecla `Shift`) con habilidades como reservar/intercambiar pieza (`HOLD`) o revelar las 5 piezas siguientes durante 10 segundos (`PRÓXIMAS 5`).
 - **Sistema de puntuación** clásico de Tetris (100 / 300 / 500 / 800 multiplicado por nivel).
 - **Niveles** que aumentan cada 10 líneas y aceleran la caída.
-- **Pausa** y **Game Over** con opción de reinicio.
+- **Menú de pausa** (P / Esc) con reanudar, reiniciar, controles y nivel inicial; **Game Over** con opción de reinicio.
 
 ---
 
@@ -86,7 +86,7 @@ Después abre `http://localhost:8000` en el navegador.
 | `↓`       | Soft drop (bajar más rápido)      |
 | `Espacio` | Hard drop (caída instantánea)     |
 | `Shift`   | Abrir/cerrar el menú de habilidades (requiere energía llena) |
-| `P`       | Pausar / reanudar                 |
+| `P` / `Esc` | Pausar / reanudar (menú de pausa: reanudar, reiniciar, controles, nivel inicial) |
 
 ---
 

@@ -83,14 +83,25 @@ const abilityListEl = document.getElementById('ability-list');
 const queuePreviewEl = document.getElementById('queue-preview');
 const queueCanvas = document.getElementById('queue-canvas');
 const queueCtx = queueCanvas.getContext('2d');
+const pauseMenu = document.getElementById('pause-menu');
+const pauseResumeBtn = document.getElementById('pause-resume');
+const pauseRestartBtn = document.getElementById('pause-restart');
+const pauseControlsBtn = document.getElementById('pause-controls-btn');
+const pauseControlsEl = document.getElementById('pause-controls');
+const pauseMenuBtn = document.getElementById('pause-menu-btn');
+const startLevelSelect = document.getElementById('start-level-select');
 
 const THEME_KEY = 'tetris-theme';
+const START_LEVEL_KEY = 'tetris-start-level';
+const MAX_START_LEVEL = 15;
+const RESUME_GRACE_MS = 150; // sin input de juego tras reanudar, evita movimientos accidentales
 let gridLineColor = '#22222e';
 
 let board, current, nextQueue, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId, lockTimer, lockResets, pendingPower, linesUntilPower;
 let mode, activeChallenge, challengeElapsed, challengeDone;
 let energy, held, abilityMenuOpen, revealRemaining;
 let explosions;
+let startLevel = 1, gameStartLevel = 1, inputGraceUntil = 0;
 
 // Habilidades cargables: cada entrada define su ejecución. Añadir una nueva
 // habilidad es solo agregar un objeto a este array; el menú se genera solo.
@@ -194,7 +205,7 @@ function clearLines() {
     combo++;
     lines += cleared;
     score += (LINE_SCORES[cleared] || 0) * level * combo;
-    level = Math.floor(lines / 10) + 1;
+    level = Math.max(gameStartLevel, Math.floor(lines / 10) + 1);
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
     if (combo > 1) showComboPopup(`COMBO x${combo}`);
     energy = Math.min(MAX_ENERGY, energy + cleared);
@@ -589,14 +600,39 @@ function togglePause() {
   if (gameOver || abilityMenuOpen) return;
   paused = !paused;
   if (!paused) {
+    pauseMenu.classList.add('hidden');
+    pauseControlsEl.classList.add('hidden');
+    // Quita el foco de botones/select para que Space no los "clickee" al jugar.
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     lastTime = performance.now();
+    inputGraceUntil = lastTime + RESUME_GRACE_MS;
     loop(lastTime);
   } else {
     cancelAnimationFrame(animId);
-    overlayTitle.textContent = 'PAUSA';
-    overlayScore.textContent = '';
-    overlay.classList.remove('hidden');
+    startLevelSelect.value = String(startLevel);
+    pauseMenu.classList.remove('hidden');
+    pauseResumeBtn.focus();
   }
+}
+
+function setStartLevel(value) {
+  const n = parseInt(value, 10);
+  startLevel = Math.min(MAX_START_LEVEL, Math.max(1, Number.isNaN(n) ? 1 : n));
+  try { localStorage.setItem(START_LEVEL_KEY, String(startLevel)); } catch (e) { /* sin almacenamiento */ }
+}
+
+function initStartLevel() {
+  let saved = null;
+  try { saved = localStorage.getItem(START_LEVEL_KEY); } catch (e) { /* sin almacenamiento */ }
+  const n = parseInt(saved, 10);
+  startLevel = Math.min(MAX_START_LEVEL, Math.max(1, Number.isNaN(n) ? 1 : n));
+  for (let i = 1; i <= MAX_START_LEVEL; i++) {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = String(i);
+    startLevelSelect.appendChild(opt);
+  }
+  startLevelSelect.value = String(startLevel);
 }
 
 function loop(ts) {
@@ -669,11 +705,12 @@ function init(newMode, challenge) {
   board = createBoard();
   score = 0;
   lines = 0;
-  level = 1;
+  gameStartLevel = startLevel; // fijo durante la partida; el select solo afecta a la próxima
+  level = gameStartLevel;
   combo = 0;
   paused = false;
   gameOver = false;
-  dropInterval = 1000;
+  dropInterval = Math.max(100, 1000 - (level - 1) * 90);
   dropAccum = 0;
   lockTimer = 0;
   lockResets = 0;
@@ -698,6 +735,10 @@ function init(newMode, challenge) {
     challengeGoalEl.textContent = `0 / ${activeChallenge.goalLines}`;
   }
   overlay.classList.add('hidden');
+  pauseMenu.classList.add('hidden');
+  pauseControlsEl.classList.add('hidden');
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+  inputGraceUntil = performance.now() + RESUME_GRACE_MS;
   startScreen.classList.add('hidden');
   comboPopup.classList.add('hidden');
   clearTimeout(comboPopupTimer);
@@ -717,6 +758,7 @@ function showStartScreen() {
   gameOver = true; // evita que el loop en curso (si lo hubiera) siga corriendo
   cancelAnimationFrame(animId);
   overlay.classList.add('hidden');
+  pauseMenu.classList.add('hidden');
   startScreen.classList.remove('hidden');
 }
 
@@ -732,7 +774,16 @@ function renderChallengeList() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.code === 'KeyP') { togglePause(); return; }
+  if (!startScreen.classList.contains('hidden')) return;
+  if (e.code === 'KeyP' || (e.code === 'Escape' && !abilityMenuOpen)) {
+    // Esc sobre el select solo debe cerrar su desplegable nativo.
+    if (!e.repeat && !(e.code === 'Escape' && e.target instanceof HTMLSelectElement)) togglePause();
+    return;
+  }
+  // Con el menú de pausa abierto ningún atajo de juego actúa (los botones y
+  // el select del menú siguen funcionando con su comportamiento nativo).
+  if (paused) return;
+  if (e.repeat && (e.code === 'ShiftLeft' || e.code === 'ShiftRight')) return;
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
     if (abilityMenuOpen) closeAbilityMenu();
     else openAbilityMenu();
@@ -740,6 +791,8 @@ document.addEventListener('keydown', e => {
   }
   if (e.code === 'Escape' && abilityMenuOpen) { closeAbilityMenu(); return; }
   if (paused || gameOver || abilityMenuOpen) return;
+  if (performance.now() < inputGraceUntil) { if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault(); return; }
+  if (e.target instanceof HTMLElement && e.target.closest('select, button')) e.target.blur();
   switch (e.code) {
     case 'ArrowLeft':
       if (!collide(current.shape, current.x - 1, current.y)) { current.x--; onPieceMoved(); }
@@ -764,9 +817,15 @@ document.addEventListener('keydown', e => {
 
 restartBtn.addEventListener('click', () => init(mode, activeChallenge));
 menuBtn.addEventListener('click', showStartScreen);
+pauseResumeBtn.addEventListener('click', togglePause);
+pauseRestartBtn.addEventListener('click', () => init(mode, activeChallenge));
+pauseControlsBtn.addEventListener('click', () => pauseControlsEl.classList.toggle('hidden'));
+pauseMenuBtn.addEventListener('click', showStartScreen);
+startLevelSelect.addEventListener('change', () => setStartLevel(startLevelSelect.value));
 modeClassicBtn.addEventListener('click', startClassic);
 
 initTheme();
+initStartLevel();
 renderChallengeList();
 renderAbilityMenu();
 showStartScreen();

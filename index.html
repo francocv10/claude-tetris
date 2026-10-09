@@ -78,7 +78,7 @@
             <li><kbd>↓</kbd> bajar</li>
             <li><kbd>Space</kbd> caída</li>
             <li><kbd>Shift</kbd> habilidad</li>
-            <li><kbd>P</kbd> pausa</li>
+            <li><kbd>Esc</kbd>/<kbd>P</kbd> pausa</li>
           </ul>
         </div>
       </aside>
@@ -91,6 +91,30 @@
         <div class="overlay-actions">
           <button id="restart-btn">Reiniciar</button>
           <button id="menu-btn">Menú</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="pause-menu" class="overlay hidden">
+      <div class="overlay-box">
+        <p id="pause-title">PAUSA</p>
+        <div class="challenge-list">
+          <button id="pause-resume" class="challenge-btn">Reanudar</button>
+          <button id="pause-restart" class="challenge-btn">Reiniciar</button>
+          <button id="pause-controls-btn" class="challenge-btn">Ver controles</button>
+          <ul id="pause-controls" class="pause-controls hidden">
+            <li><kbd>←</kbd><kbd>→</kbd> mover</li>
+            <li><kbd>↑</kbd> / <kbd>X</kbd> rotar</li>
+            <li><kbd>↓</kbd> bajar</li>
+            <li><kbd>Space</kbd> caída</li>
+            <li><kbd>Shift</kbd> habilidad</li>
+            <li><kbd>Esc</kbd> / <kbd>P</kbd> pausa</li>
+          </ul>
+          <label class="pause-level">
+            <span class="label">NIVEL INICIAL</span>
+            <select id="start-level-select"></select>
+          </label>
+          <button id="pause-menu-btn" class="challenge-btn">Menú</button>
         </div>
       </div>
     </div>
