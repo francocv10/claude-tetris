@@ -83,12 +83,24 @@ const abilityListEl = document.getElementById('ability-list');
 const queuePreviewEl = document.getElementById('queue-preview');
 const queueCanvas = document.getElementById('queue-canvas');
 const queueCtx = queueCanvas.getContext('2d');
+const recordBanner = document.getElementById('record-banner');
+const recordForm = document.getElementById('record-form');
+const recordNameInput = document.getElementById('record-name');
+const overlayRecordsEl = document.getElementById('overlay-records');
+const startRecordsEl = document.getElementById('start-records');
+const resetRecordsBtn = document.getElementById('reset-records-btn');
 
 const THEME_KEY = 'tetris-theme';
 let gridLineColor = '#22222e';
 
 let board, current, nextQueue, score, lines, level, combo, paused, gameOver, lastTime, dropAccum, dropInterval, animId, lockTimer, lockResets, pendingPower, linesUntilPower;
 let mode, activeChallenge, challengeElapsed, challengeDone;
+let maxCombo = 0;
+const RECORDS_KEY = 'tetris-records';
+const LAST_NAME_KEY = 'tetris-last-name';
+const MAX_RECORDS = 5;
+let pendingRecord = null; // partida clásica en espera de nombre
+let resetConfirmTimer = null;
 let energy, held, abilityMenuOpen, revealRemaining;
 let explosions;
 
@@ -192,6 +204,7 @@ function clearLines() {
   }
   if (cleared) {
     combo++;
+    if (combo > maxCombo) maxCombo = combo;
     lines += cleared;
     score += (LINE_SCORES[cleared] || 0) * level * combo;
     level = Math.floor(lines / 10) + 1;
@@ -555,9 +568,91 @@ function useAbility(ability) {
   animId = requestAnimationFrame(loop);
 }
 
+// ---- Records (localStorage) ----
+function loadRecords() {
+  const empty = { top: [], bestCombo: 0, maxLines: 0 };
+  try {
+    const data = JSON.parse(localStorage.getItem(RECORDS_KEY));
+    if (!data || !Array.isArray(data.top)) return empty;
+    return {
+      top: data.top.filter(r => r && Number.isFinite(r.score)).sort((a, b) => b.score - a.score).slice(0, MAX_RECORDS),
+      bestCombo: Number(data.bestCombo) || 0,
+      maxLines: Number(data.maxLines) || 0,
+    };
+  } catch (e) {
+    return empty;
+  }
+}
+
+function saveRecords(data) {
+  try { localStorage.setItem(RECORDS_KEY, JSON.stringify(data)); } catch (e) { /* sin almacenamiento */ }
+}
+
+function qualifiesForTop(data, s) {
+  return s > 0 && (data.top.length < MAX_RECORDS || s > data.top[data.top.length - 1].score);
+}
+
+// Dibuja el top 5 y las estadísticas en `container`. Usa textContent (nombres de usuario).
+function renderRecords(container, highlightIndex = -1) {
+  const data = loadRecords();
+  container.innerHTML = '';
+  const ol = document.createElement('ol');
+  if (!data.top.length) {
+    const li = document.createElement('li');
+    li.className = 'record-empty';
+    li.textContent = 'Sin records todavía';
+    ol.appendChild(li);
+  }
+  data.top.forEach((r, i) => {
+    const li = document.createElement('li');
+    if (i === highlightIndex) li.classList.add('record-new');
+    const name = document.createElement('span');
+    name.textContent = `${i + 1}. ${String(r.name || '---').slice(0, 12)}`;
+    const sc = document.createElement('span');
+    sc.textContent = r.score.toLocaleString();
+    li.append(name, sc);
+    ol.appendChild(li);
+  });
+  const stats = document.createElement('p');
+  stats.className = 'record-stats';
+  stats.textContent = `Mejor combo: x${data.bestCombo} — Líneas máx: ${data.maxLines}`;
+  container.append(ol, stats);
+}
+
+function showOverlayRecords(highlightIndex) {
+  renderRecords(overlayRecordsEl, highlightIndex);
+  overlayRecordsEl.classList.remove('hidden');
+}
+
+function resetRecordUI() {
+  recordBanner.classList.add('hidden');
+  recordForm.classList.add('hidden');
+  overlayRecordsEl.classList.add('hidden');
+  recordNameInput.blur();
+  pendingRecord = null;
+}
+
+function submitRecord() {
+  if (!pendingRecord) return;
+  const data = loadRecords();
+  const name = recordNameInput.value.trim().slice(0, 12) || 'Anónimo';
+  try { localStorage.setItem(LAST_NAME_KEY, name); } catch (e) { /* ignorar */ }
+  const entry = { name, ...pendingRecord, date: new Date().toISOString() };
+  pendingRecord = null;
+  data.top.push(entry);
+  data.top.sort((a, b) => b.score - a.score); // estable: empates quedan tras los previos
+  const idx = data.top.indexOf(entry);
+  data.top = data.top.slice(0, MAX_RECORDS);
+  saveRecords(data);
+  recordForm.classList.add('hidden');
+  recordNameInput.blur();
+  showOverlayRecords(idx);
+}
+
 function endGame() {
   gameOver = true;
   cancelAnimationFrame(animId);
+  resetRecordUI();
   if (mode === 'challenge' && !challengeDone) {
     challengeDone = true;
     overlayTitle.textContent = 'DESAFÍO FALLIDO';
@@ -565,6 +660,20 @@ function endGame() {
   } else {
     overlayTitle.textContent = 'GAME OVER';
     overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
+    if (mode === 'classic') {
+      const data = loadRecords();
+      data.bestCombo = Math.max(data.bestCombo, maxCombo);
+      data.maxLines = Math.max(data.maxLines, lines);
+      saveRecords(data);
+      showOverlayRecords(-1);
+      if (qualifiesForTop(data, score)) {
+        pendingRecord = { score, lines, level, combo: maxCombo };
+        recordBanner.classList.remove('hidden');
+        try { recordNameInput.value = localStorage.getItem(LAST_NAME_KEY) || ''; } catch (e) { recordNameInput.value = ''; }
+        recordForm.classList.remove('hidden');
+        setTimeout(() => recordNameInput.focus(), 0);
+      }
+    }
   }
   overlay.classList.remove('hidden');
 }
@@ -572,6 +681,7 @@ function endGame() {
 // Fin del desafío por objetivo cumplido o por tiempo agotado (game over lo
 // maneja endGame() reutilizando el mensaje de fallo).
 function endChallenge(success) {
+  resetRecordUI();
   challengeDone = true;
   gameOver = true;
   cancelAnimationFrame(animId);
@@ -595,6 +705,7 @@ function togglePause() {
     cancelAnimationFrame(animId);
     overlayTitle.textContent = 'PAUSA';
     overlayScore.textContent = '';
+    overlayRecordsEl.classList.add('hidden');
     overlay.classList.remove('hidden');
   }
 }
@@ -671,6 +782,7 @@ function init(newMode, challenge) {
   lines = 0;
   level = 1;
   combo = 0;
+  maxCombo = 0;
   paused = false;
   gameOver = false;
   dropInterval = 1000;
@@ -697,6 +809,7 @@ function init(newMode, challenge) {
     challengeTimerEl.textContent = formatTime(activeChallenge.timeLimit);
     challengeGoalEl.textContent = `0 / ${activeChallenge.goalLines}`;
   }
+  resetRecordUI();
   overlay.classList.add('hidden');
   startScreen.classList.add('hidden');
   comboPopup.classList.add('hidden');
@@ -717,6 +830,11 @@ function showStartScreen() {
   gameOver = true; // evita que el loop en curso (si lo hubiera) siga corriendo
   cancelAnimationFrame(animId);
   overlay.classList.add('hidden');
+  resetRecordUI();
+  renderRecords(startRecordsEl);
+  resetRecordsBtn.classList.remove('confirming');
+  resetRecordsBtn.textContent = 'Resetear records';
+  clearTimeout(resetConfirmTimer);
   startScreen.classList.remove('hidden');
 }
 
@@ -732,6 +850,7 @@ function renderChallengeList() {
 }
 
 document.addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT') return;
   if (e.code === 'KeyP') { togglePause(); return; }
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
     if (abilityMenuOpen) closeAbilityMenu();
@@ -764,6 +883,24 @@ document.addEventListener('keydown', e => {
 
 restartBtn.addEventListener('click', () => init(mode, activeChallenge));
 menuBtn.addEventListener('click', showStartScreen);
+recordForm.addEventListener('submit', e => { e.preventDefault(); submitRecord(); });
+resetRecordsBtn.addEventListener('click', () => {
+  if (!resetRecordsBtn.classList.contains('confirming')) {
+    resetRecordsBtn.classList.add('confirming');
+    resetRecordsBtn.textContent = '¿Seguro? Clic otra vez';
+    clearTimeout(resetConfirmTimer);
+    resetConfirmTimer = setTimeout(() => {
+      resetRecordsBtn.classList.remove('confirming');
+      resetRecordsBtn.textContent = 'Resetear records';
+    }, 3000);
+    return;
+  }
+  clearTimeout(resetConfirmTimer);
+  resetRecordsBtn.classList.remove('confirming');
+  resetRecordsBtn.textContent = 'Resetear records';
+  try { localStorage.removeItem(RECORDS_KEY); } catch (e) { /* ignorar */ }
+  renderRecords(startRecordsEl);
+});
 modeClassicBtn.addEventListener('click', startClassic);
 
 initTheme();

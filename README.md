@@ -41,6 +41,7 @@ Es una versión jugable del Tetris clásico con todas las mecánicas que esperar
 - **Vista previa** de la siguiente pieza.
 - **Habilidades cargables**: al llenar la barra de energía se desbloquea un menú (tecla `Shift`) con habilidades como reservar/intercambiar pieza (`HOLD`) o revelar las 5 piezas siguientes durante 10 segundos (`PRÓXIMAS 5`).
 - **Sistema de puntuación** clásico de Tetris (100 / 300 / 500 / 800 multiplicado por nivel).
+- **Tabla de records local**: Top 5 con nombre en `localStorage` (`tetris-records`), mejor combo y líneas máximas; se muestra en la pantalla de inicio y al terminar una partida clásica, con botón para resetearla.
 - **Niveles** que aumentan cada 10 líneas y aceleran la caída.
 - **Pausa** y **Game Over** con opción de reinicio.
 
